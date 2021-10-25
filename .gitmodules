@@ -1,0 +1,3 @@
+[submodule "include/Kontiki"]
+	path = include/Kontiki
+	url = git@github.com:zeng-xiangwei/Kontiki.git
