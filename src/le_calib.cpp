@@ -53,7 +53,8 @@ struct EncodeData {
 };
 
 const double PI = 3.1415926;
-const double timeDelayMax = 0.5;  //lidar和码盘之间最大的时间延迟
+double timeDelayMax = 0.5;  //lidar和码盘之间最大的时间延迟
+double timeDelay = 0.0; // lidar和码盘之间的时间延迟
 double dataStartTime = 0.0;
 double dataEndTime = 0.0;
 
@@ -666,7 +667,7 @@ void transformCloud2Init(PointCloud &ci, PointCloudIntensity &co,
 		PointI po;
 		PointType &pi = ci.points[i];
 		Eigen::Vector3d pos;
-		double ptime = pi.timestamp + 0;
+		double ptime = pi.timestamp + timeDelay;
 		if (evaluate(traj, ptime, pos)) {
 			double angle = pos.x();
 			point2InitEncode(pi, po, trans, orien, -angle);  // 此处取负角度值，因为码盘按顺时针旋转，在右手系中是负角度方向
@@ -687,6 +688,16 @@ inline void PublishCloudMsg(ros::Publisher& publisher,
 	publisher.publish(msg);
 }
 
+template<typename T>
+void readParam(ros::NodeHandle &nh, std::string name, T &param, T def) {
+	if (nh.getParam(name, param)) {
+		ROS_INFO_STREAM("Loaded " << name << " : " << param);
+	} else {
+		param = def;
+		ROS_INFO_STREAM("Loaded default " << name << " : " << param);
+	}
+}
+
 // end namespace leCalib
 int main(int argc, char** argv) {
 	ros::init(argc, argv, "le_calib");
@@ -697,19 +708,36 @@ int main(int argc, char** argv) {
 	ros::Publisher pubLaserCloudOrign = nh.advertise<sensor_msgs::PointCloud2> ("/laser_cloud_orign", 2);
 
 	std::vector<double> para_rpxy(4); // 外参
-	para_rpxy[0] = deg2rad(-88.4489);
-	para_rpxy[1] = deg2rad(2.39729);
-	para_rpxy[2] = 0.000987309;
-	para_rpxy[3] = -0.0131191;
-	Eigen::Vector3d exTransposeLidar2Encode(para_rpxy[2], para_rpxy[3], 0);
-	Eigen::Matrix3d exOrientationLidar2Encode(pr2R(para_rpxy[1], para_rpxy[0]));
 	// 读取数据包数据
-	std::string path = "/home/dut-zxw/zxw/data_bag/lidar_encode/xuanzhuanbiaoding/speed_45_per_s_dizuowending.bag";
-	std::string encode_topic = "/INNFOS/actuator_states";
-	std::string lidar_topic = "/velodyne_points";
+	std::string path, encode_topic, lidar_topic;
 	double bag_start = 0.0;
 	double bag_durr = 30;
 	double knot_distance = 0.05;
+	double &time_delay_max = timeDelayMax;
+	double &time_delay = timeDelay;
+
+	// 加载参数
+	para_rpxy = nh.param("extrinsic", std::vector<double>(4, 0.0));
+	ROS_INFO_STREAM("Loaded roll : " << para_rpxy[0]);
+	ROS_INFO_STREAM("Loaded pitch : " << para_rpxy[1]);
+	ROS_INFO_STREAM("Loaded x : " << para_rpxy[2]);
+	ROS_INFO_STREAM("Loaded y : " << para_rpxy[3]);
+
+	readParam(nh, "time_delay_max", time_delay_max, 0.5);
+	readParam(nh, "time_delay", time_delay, 0.0);
+	readParam(nh, "path", path, std::string("/home/dut-zxw/zxw/data_bag/lidar_encode/xuanzhuanbiaoding/speed_45_per_s_dizuowending.bag"));
+	readParam(nh, "encode_topic", encode_topic, std::string("/INNFOS/actuator_states"));
+	readParam(nh, "lidar_topic", lidar_topic, std::string("/velodyne_points"));
+	readParam(nh, "bag_start", bag_start, 0.0);
+	readParam(nh, "bag_durr", bag_durr, -1.0);
+	readParam(nh, "knot_distance", knot_distance, 0.05);
+
+	para_rpxy[0] = deg2rad(para_rpxy[0]);
+	para_rpxy[1] = deg2rad(para_rpxy[1]);
+
+	Eigen::Vector3d exTransposeLidar2Encode(para_rpxy[2], para_rpxy[3], 0);
+	Eigen::Matrix3d exOrientationLidar2Encode(pr2R(para_rpxy[1], para_rpxy[0]));
+
 	readDataBag(path, encode_topic, lidar_topic, bag_start, bag_durr);
 	adjustDataset();
 
@@ -720,10 +748,10 @@ int main(int argc, char** argv) {
 		cornerClouds.push_back(pcl::make_shared<PointCloud>());
 		surfClouds.push_back(pcl::make_shared<PointCloud>());
 		extracFeatureAndCalculateTime(lidarData[i], lidarTimestamps[i], cornerClouds.back(), surfClouds.back());
-		std::cout << "frame " << i << std::endl;
-		std::cout << "full   Cloud size : " << lidarData[i]->points.size() << std::endl;
-		std::cout << "corner Cloud size : " << cornerClouds.back()->points.size() << std::endl;
-		std::cout << "surf Cloud size : " << surfClouds.back()->points.size() << std::endl << std::endl;
+		// std::cout << "frame " << i << std::endl;
+		// std::cout << "full   Cloud size : " << lidarData[i]->points.size() << std::endl;
+		// std::cout << "corner Cloud size : " << cornerClouds.back()->points.size() << std::endl;
+		// std::cout << "surf Cloud size : " << surfClouds.back()->points.size() << std::endl << std::endl;
 	}
 
 	// 根据码盘数据拟合出码盘的数据
@@ -766,14 +794,14 @@ int main(int argc, char** argv) {
 		auto &orignFull = lidarData[i];
 		auto &orignCorner = cornerClouds[i];
 		auto &orignSurf = surfClouds[i];
-		// transformCloud2Init(*orignFull, *fullCloud, exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
-		// transformCloud2Init(*orignCorner, *cornerCloud, exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
+		transformCloud2Init(*orignFull, *fullCloud, exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
+		transformCloud2Init(*orignCorner, *cornerCloud, exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
 		transformCloud2Init(*orignSurf, *surfCloud, exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
 		ros::Time stamp = ros::Time().fromSec(lidarTimestamps[i]);
-		// PublishCloudMsg(pubLaserCloudFull, *fullCloud, stamp, "motor");
-		// PublishCloudMsg(pubLaserCloudCorner, *cornerCloud, stamp, "motor");
+		PublishCloudMsg(pubLaserCloudFull, *fullCloud, stamp, "motor");
+		PublishCloudMsg(pubLaserCloudCorner, *cornerCloud, stamp, "motor");
 		PublishCloudMsg(pubLaserCloudSurf, *surfCloud, stamp, "motor");
-		PublishCloudMsg(pubLaserCloudOrign, *orignFull, stamp, "motor");
+		// PublishCloudMsg(pubLaserCloudOrign, *orignFull, stamp, "motor");
 
 		r.sleep();
 	}

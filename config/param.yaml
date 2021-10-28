@@ -1,0 +1,21 @@
+# lidar-encode外参：roll pitch x y，角度单位为 度（deg），长度单位为 米（m）
+extrinsic: [-88.4489, 2.39729, 0.000987309, -0.0131191]
+# 最大时间延迟
+time_delay_max: 0.6
+# 时间延迟
+time_delay: -0.14
+
+# 数据包路径
+path: "/home/dut-zxw/zxw/data_bag/lidar_encode/xuanzhuanbiaoding/chang_speed_max_180_per_s.bag"
+# 点云话题
+encode_topic: "/INNFOS/actuator_states"
+# 码盘话题
+lidar_topic: "/velodyne_points"
+
+# 数据包起始相对时间
+bag_start: 8.0
+# 数据包时长，-1表示时长为整个数据包
+bag_durr: -1.0
+
+# 样条节点宽度
+knot_distance: 0.05
