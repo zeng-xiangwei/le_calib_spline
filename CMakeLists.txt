@@ -3,7 +3,7 @@ project(le_calib)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++14 -g)
-SET(CMAKE_BUILD_TYPE "debug")
+SET(CMAKE_BUILD_TYPE "release")
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -129,7 +129,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${CMAKE_CURRENT_SOURCE_DIR}/include/Kontiki/include
 )
