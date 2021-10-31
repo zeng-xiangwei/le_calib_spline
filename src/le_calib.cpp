@@ -843,14 +843,13 @@ void findCorressponds(std::vector<pcl::shared_ptr<PointCloud>> &surfs,
 			bool mapValid = (normalTo2pi(curAngle - tmpAngle) > angleDist1) && (normalTo2pi(curAngle - tmpAngle) < angleDist2);
 			if (mapValid) {
 				*localMap += *transformCloud2Init(*surfs[j], exTransposeLidar2Encode, exOrientationLidar2Encode, traj);
+				// std::cout << "surfs [ " << j << " ] size : " << surfs[j]->points.size() << std::endl;
+				// std::cout << "localMap size : " << localMap->points.size() << std::endl;
+				double delta = curAngle - tmpAngle;
+				// 第一圈地图的角度差是[angleDist1, angleDist2],第二圈是[angleDist1 + 360, angleDist2 + 360],第三圈是[angleDist1 + 720, angleDist2 + 720]
+				// 因此大于720度的话，可以采集两圈地图
+				if (delta > deg2rad(720.0)) break; 
 			}
-			int countCircle = 0;
-			double delta = curAngle - tmpAngle;
-			while (delta > 2 * PI) {
-				delta -= 2 * PI;
-				countCircle++;
-			}
-			if (countCircle > 0) break;
 		}
 
 		if (localMap->points.size() < 100) {
@@ -858,6 +857,7 @@ void findCorressponds(std::vector<pcl::shared_ptr<PointCloud>> &surfs,
 		}
 		count++;
 		// char ch;
+		// std::cout << "input a to continue\n";
 		// while (std::cin >> ch) {
 		// 	if (ch == 'a') break;
 		// }
@@ -1150,7 +1150,7 @@ int main(int argc, char** argv) {
 	// 计算点的id，为找匹配对作准备
 	calculateCloudIDs(surfClouds, surfcloudIDs);
 	
-	int iterCount = 20;
+	int iterCount = 50;
 	for (int i = 0; i < iterCount; ++i) {
 		// 找到所有匹配对
 		matchPairs.clear();
