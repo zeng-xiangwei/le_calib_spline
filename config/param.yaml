@@ -1,6 +1,7 @@
-# lidar-encode外参：roll pitch x y，角度单位为 度（deg），长度单位为 米（m）
-extrinsic: [-88.4489, 2.39729, 0.000987309, -0.0131191]
-# extrinsic: [0, 0, 0.000987309, -0.0131191]
+# lidar-encode外参：roll pitch yaw x y z，角度单位为 弧度（rad），长度单位为 米（m）
+# extrinsic: [-88.4489, 2.39729, 0.000987309, -0.0131191]
+# extrinsic: [-1.57, 0, 0, 0]
+extrinsic: [1.59582, 3.10042, 2.36533, -0.00374499, -0.00772277, 0]
 # 最大时间延迟
 time_delay_max: 0.2
 # 时间延迟
@@ -17,7 +18,7 @@ lidar_topic: "/velodyne_points"
 # 数据包起始相对时间
 bag_start: 8.0
 # 数据包时长，-1表示时长为整个数据包
-bag_durr: -1.0
+bag_durr: -1
 
 # 样条节点宽度
 knot_distance: 0.05
@@ -25,3 +26,9 @@ knot_distance: 0.05
 # 构建地图时的码盘角度差，单位 度（deg）
 angle_dist1: 140.0
 angle_dist2: 220.0
+
+# 重新寻找匹配对的迭代的次数，迭代次数为0时，就是不优化，直接输出结果
+iter_count: 50
+
+# 优化类型 0：只优化外参   1：只优化时延   2：优化外参和时延
+opt_type: 1

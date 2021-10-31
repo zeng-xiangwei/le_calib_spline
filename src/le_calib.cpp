@@ -80,6 +80,8 @@ double dataStartTime = 0.0;
 double dataEndTime = 0.0;
 double angleDist1 = 170.0; // 构建地图时的码盘角度差
 double angleDist2 = 190.0;
+int iter_count = 50; // 重新寻找匹配对的迭代的次数
+int opt_type = 1; // 优化类型 0：只优化外参   1：只优化时延   2：优化外参和时延
 
 std::vector<PointCloud::Ptr> lidarData;
 std::vector<int> cloudIDs;
@@ -704,6 +706,25 @@ Eigen::Matrix3d pr2R(double p, double r) {
 	return Ry * Rx;
 }
 
+Eigen::Matrix3d ypr2R(double y, double p, double r) {
+	Eigen::Matrix3d Rz;
+	Rz << cos(y), -sin(y), 0.,
+			sin(y), cos(y), 0.,
+			0., 0., 1.;
+
+	Eigen::Matrix3d Ry;
+	Ry << cos(p), 0., sin(p),
+			0., 1., 0.,
+			-sin(p), 0., cos(p);
+
+	Eigen::Matrix3d Rx;
+	Rx << 1., 0., 0.,
+			0., cos(r), -sin(r),
+			0., sin(r), cos(r);
+
+	return Rz * Ry * Rx;
+}
+
 bool evaluate(std::shared_ptr<kontiki::trajectories::SplitTrajectory> &traj,
 			  double t, Eigen::Vector3d &p) {
     if (traj->MinTime() > t || traj->MaxTime() <= t)
@@ -986,16 +1007,40 @@ void findCorressponds(std::vector<pcl::shared_ptr<PointCloud>> &surfs,
 	std::cout << "find correspond time : " << tictoc.Toc() << " ms\n";
 }
 
-void optimizeWithCloud(std::shared_ptr<kontiki::trajectories::SplitTrajectory> &traj) {
+void optimizeWithCloud(std::shared_ptr<kontiki::trajectories::SplitTrajectory> &traj, int type) {
 	TicToc tictoc;
 	tictoc.Tic();
 	std::shared_ptr<kontiki::sensors::VLP16LiDAR> lidar_;
 	lidar_ = std::make_shared<kontiki::sensors::VLP16LiDAR>();
 	lidar_->set_relative_orientation(Eigen::Quaterniond(exOrientationLidar2Encode));
 	lidar_->set_relative_position(exTransposeLidar2Encode);
-	lidar_->LockRelativeOrientation(true);
-	lidar_->LockRelativePosition(true);
-	lidar_->LockTimeOffset(false);
+
+	switch (type) {
+			// 只优化外参
+		case 0:
+			lidar_->LockRelativeOrientation(false);
+			lidar_->LockRelativePosition(false);
+			lidar_->LockTimeOffset(true);
+			break;
+
+			// 只优化时延
+		case 1:
+			lidar_->LockRelativeOrientation(true);
+			lidar_->LockRelativePosition(true);
+			lidar_->LockTimeOffset(false);
+			break;
+
+		// 优化外参和时延
+		case 2:
+			lidar_->LockRelativeOrientation(true);
+			lidar_->LockRelativePosition(true);
+			lidar_->LockTimeOffset(true);
+			break;
+		
+		default:
+			break;
+	}
+
 	lidar_->set_max_time_offset(timeDelayMax);
 	lidar_->set_time_offset(timeDelay);
 
@@ -1034,8 +1079,11 @@ void optimizeWithCloud(std::shared_ptr<kontiki::trajectories::SplitTrajectory> &
 	exOrientationLidar2Encode = lidar_->relative_orientation().toRotationMatrix();
 	exTransposeLidar2Encode = lidar_->relative_position();
 	std::cout << "\n time delay : " << timeDelay * 1000 << " ms" << std::endl;
-	std::cout << "\n postion : " << lidar_->relative_position() << std::endl;
-	std::cout << "\n orientation : " << lidar_->relative_orientation().toRotationMatrix().eulerAngles(2, 1, 0).transpose() << std::endl;
+
+	Eigen::Vector3d ypr = lidar_->relative_orientation().toRotationMatrix().eulerAngles(2, 1, 0);
+	Eigen::Vector3d xyz = lidar_->relative_position();
+	std::cout << "\n postion x: " << xyz.x() << " m  y: " << xyz.y() << " m  z: " << xyz.z() << " m" << std::endl;
+	std::cout << "\n orientation roll: " << ypr.z() << " rad  pitch: " << ypr.y() << " rad  yaw: " << ypr.x() << " rad"<< std::endl;
 }
 
 template<typename T>
@@ -1061,7 +1109,7 @@ int main(int argc, char** argv) {
 	pubLocalMapCopy = nh.advertise<sensor_msgs::PointCloud2> ("/laser_cloud_local_map", 2);
 	pubLocalSurfCopy = nh.advertise<sensor_msgs::PointCloud2> ("/laser_cloud_local_surf", 2);
 
-	std::vector<double> para_rpxy(4); // 外参
+	std::vector<double> para_rpxy(6); // 外参
 	// 读取数据包数据
 	std::string path, encode_topic, lidar_topic;
 	double bag_start = 0.0;
@@ -1073,11 +1121,13 @@ int main(int argc, char** argv) {
 	double &angle_dist2 = angleDist2;
 
 	// 加载参数
-	para_rpxy = nh.param("extrinsic", std::vector<double>(4, 0.0));
+	para_rpxy = nh.param("extrinsic", std::vector<double>(6, 0.0));
 	ROS_INFO_STREAM("Loaded roll : " << para_rpxy[0]);
 	ROS_INFO_STREAM("Loaded pitch : " << para_rpxy[1]);
-	ROS_INFO_STREAM("Loaded x : " << para_rpxy[2]);
-	ROS_INFO_STREAM("Loaded y : " << para_rpxy[3]);
+	ROS_INFO_STREAM("Loaded yaw : " << para_rpxy[2]);
+	ROS_INFO_STREAM("Loaded x : " << para_rpxy[3]);
+	ROS_INFO_STREAM("Loaded y : " << para_rpxy[4]);
+	ROS_INFO_STREAM("Loaded z : " << para_rpxy[5]);
 
 	readParam(nh, "time_delay_max", time_delay_max, 0.5);
 	readParam(nh, "time_delay", time_delay, 0.0);
@@ -1089,16 +1139,19 @@ int main(int argc, char** argv) {
 	readParam(nh, "knot_distance", knot_distance, 0.05);
 	readParam(nh, "angle_dist1", angle_dist1, 170.0);
 	readParam(nh, "angle_dist2", angle_dist2, 190.0);
+	readParam(nh, "iter_count", iter_count, 50);
+	readParam(nh, "opt_type", opt_type, 1);
 	angle_dist1 = deg2rad(angle_dist1);
 	angle_dist2 = deg2rad(angle_dist2);
 
-	para_rpxy[0] = deg2rad(para_rpxy[0]);
-	para_rpxy[1] = deg2rad(para_rpxy[1]);
+	// para_rpxy[0] = deg2rad(para_rpxy[0]);
+	// para_rpxy[1] = deg2rad(para_rpxy[1]);
 
 	Eigen::Vector3d &exTranspose = exTransposeLidar2Encode;
-	exTranspose = Eigen::Vector3d(para_rpxy[2], para_rpxy[3], 0);
+	exTranspose = Eigen::Vector3d(para_rpxy[3], para_rpxy[4], para_rpxy[5]);
 	Eigen::Matrix3d &exOrientation = exOrientationLidar2Encode;
-	exOrientation = pr2R(para_rpxy[1], para_rpxy[0]);
+	// exOrientation = pr2R(para_rpxy[1], para_rpxy[0]);
+	exOrientation = ypr2R(para_rpxy[2], para_rpxy[1], para_rpxy[0]);
 
 	readDataBag(path, encode_topic, lidar_topic, bag_start, bag_durr);
 	adjustDataset();
@@ -1150,8 +1203,7 @@ int main(int argc, char** argv) {
 	// 计算点的id，为找匹配对作准备
 	calculateCloudIDs(surfClouds, surfcloudIDs);
 	
-	int iterCount = 50;
-	for (int i = 0; i < iterCount; ++i) {
+	for (int i = 0; i < iter_count; ++i) {
 		// 找到所有匹配对
 		matchPairs.clear();
 		std::cout << "start find corressponds\n";
@@ -1159,7 +1211,7 @@ int main(int argc, char** argv) {
 		std::cout << "match pair size : " << matchPairs.size() << std::endl;
 
 		// 使用匹配对优化时延
-		optimizeWithCloud(traj);
+		optimizeWithCloud(traj, opt_type);
 	}
 
 	// 发布点云
